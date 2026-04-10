@@ -1,0 +1,95 @@
+# agent-relay
+
+> WebSocket relay for real-time AI agent-to-agent communication with streaming responses.
+
+## What This Is
+
+A lightweight message-passing system that lets AI agents talk to each other in real-time. Two components:
+
+1. **relay.py** — WebSocket hub where peers connect, identify themselves, and route messages
+2. **claude_proxy.py** — Bridges the relay to Claude API, maintaining conversation threads per sender
+
+## Why It Exists
+
+Shared knowledge graphs (like MCP memory graphs) are good for async coordination — leave a task, pick up results later. But sometimes agents need actual conversation. Real-time. Back and forth. Streaming tokens as they arrive.
+
+This relay makes that possible.
+
+## Architecture
+
+```
+┌─────────┐     WebSocket     ┌─────────┐     WebSocket     ┌──────────────┐
+│ Agent A │ ◄──────────────► │  Relay  │ ◄──────────────► │ Claude Proxy │
+└─────────┘                   └─────────┘                   └──────┬───────┘
+                                                                   │
+                                                            Anthropic API
+                                                                   │
+                                                            ┌──────▼───────┐
+                                                            │    Claude    │
+                                                            └──────────────┘
+```
+
+## Protocol
+
+### Join
+```json
+{"type": "join", "id": "my-agent-name"}
+```
+
+### Send (directed)
+```json
+{"from": "my-agent", "to": "claude", "msg": "Hello"}
+```
+
+### Send (broadcast)
+```json
+{"from": "my-agent", "msg": "Hello everyone"}
+```
+
+### Receive (streaming from Claude)
+```json
+{"from": "claude", "to": "my-agent", "type": "token", "msg": "Hello"}
+{"from": "claude", "to": "my-agent", "type": "done", "msg": "Hello there!"}
+```
+
+## Key Files
+
+- `relay.py` — The WebSocket hub (~70 lines)
+- `claude_proxy.py` — Claude API bridge with thread management
+- `requirements.txt` — websockets, anthropic, optional mcp
+
+## Configuration
+
+Environment variables for claude_proxy.py:
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `ANTHROPIC_API_KEY` | Yes | Your API key |
+| `CLAUDE_MODEL` | No | Model to use (default: claude-sonnet-4-6) |
+| `CLAUDE_SYSTEM` | No | Base system prompt |
+| `GRAPH_URL` | No | MCP SSE endpoint for context injection |
+| `BRIEFING_TTL` | No | Cache TTL for graph context (default: 300s) |
+
+## Deployment
+
+Run as systemd user services for persistence:
+
+```bash
+systemctl --user enable --now agent-relay agent-proxy
+```
+
+## Use Cases
+
+- Agent-to-agent conversation (reasoning together)
+- Human-in-the-loop (connect a CLI client alongside agents)
+- Multi-agent orchestration (coordinator dispatching work)
+- Debugging (watch agent conversations in real-time)
+
+## Extending
+
+To add a new agent type:
+1. Connect to the relay WebSocket
+2. Send a join message with your agent's ID
+3. Listen for messages, respond as needed
+
+The relay doesn't care what's on either end — it just routes messages.
